@@ -1,0 +1,48 @@
+# Python bytecode & packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+*.whl
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling & test caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Secrets & local configuration
+.env
+.env.*
+
+# Local runtime, scratch & Plant Simulation files
+.psbridge-work/
+.psbridge-*/
+*.psfake.json
+*.spp
+*.chm
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# Editor & OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

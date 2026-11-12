@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plant-sim-bridge"
+version = "0.1.0"
+description = "PlantSimulationBridge: reproducible scheduling experiments, verified SimTalk automation, and MCP server for Siemens Tecnomatix Plant Simulation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "PlantSimulationBridge contributors" }]
+keywords = ["plant-simulation", "tecnomatix", "com", "mcp", "scheduling", "discrete-event-simulation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = []
+
+[project.optional-dependencies]
+windows = ["pywin32>=306; platform_system == 'Windows'"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/AmaneSuzuha000/PlantSimulationBridge"
+Issues = "https://github.com/AmaneSuzuha000/PlantSimulationBridge/issues"
+Changelog = "https://github.com/AmaneSuzuha000/PlantSimulationBridge/blob/main/CHANGELOG.md"
+
+[project.scripts]
+psbridge-mcp = "psbridge.mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["psbridge*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+markers = [
+    "real_com: tests requiring a local installation of Siemens Plant Simulation (set PSBRIDGE_REAL_COM=1)",
+]

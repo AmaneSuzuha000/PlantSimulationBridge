@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     target = workdir / template.name
     shutil.copyfile(template, target)
 
-    backend = Win32ComBackend(prefer_running_instance=False)
+    backend = Win32ComBackend(model_root=workdir, quit_on_disconnect=True, prefer_running_instance=False)
     report: dict = {"model": str(template)}
     try:
         backend.connect()

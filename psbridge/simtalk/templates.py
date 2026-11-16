@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import re
 
+from psbridge.core.validation import format_simtalk_number
 from psbridge.errors import ValidationError
 from psbridge.scheduling.policies import POLICIES, available_policies
-from psbridge.schema import Instance, validate_identifier, validate_number
+from psbridge.schema import Instance, validate_identifier
 from psbridge.simtalk.model_spec import (
     BUFFER_CLASS,
     DRAIN_CLASS,
@@ -176,18 +177,7 @@ def validate_policy_name(policy_name: str) -> str:
 
 def _num(value: float) -> str:
     """Format a validated finite number as a SimTalk numeric literal."""
-    number = validate_number(value, field_name="number")
-    if number == int(number):
-        if abs(number) < 2_000_000_000:
-            return str(int(number))
-        if abs(number) < 1e15:
-            return str(int(number)) + ".0"
-    text = format(number, ".10g")
-    if "e" in text or "E" in text:
-        text = format(number, ".10f").rstrip("0").rstrip(".")
-    if not text or text == "-0":
-        text = "0"
-    return text
+    return format_simtalk_number(value, field_name="number")
 
 
 def _q(value: str) -> str:

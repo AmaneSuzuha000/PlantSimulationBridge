@@ -144,12 +144,16 @@ def validate_schedule(
             if not entries:
                 previous_end = None
                 continue
-            current = entries[0]
-            if previous_end is not None and current.start < previous_end - TOLERANCE:
-                precedence_problems.append(
-                    operation.op_id + " starts at " + repr(current.start) + " before predecessor end " + repr(previous_end)
-                )
-            previous_end = current.end
+            for current in entries:
+                if previous_end is not None and current.start < previous_end - TOLERANCE:
+                    precedence_problems.append(
+                        operation.op_id
+                        + " starts at "
+                        + repr(current.start)
+                        + " before predecessor end "
+                        + repr(previous_end)
+                    )
+            previous_end = entries[0].end
     add(
         "precedence",
         not precedence_problems,
@@ -162,10 +166,11 @@ def validate_schedule(
         entries = by_id.get(first.op_id)
         if not entries:
             continue
-        if entries[0].start < float(job.release_time) - TOLERANCE:
-            release_problems.append(
-                first.op_id + " starts at " + repr(entries[0].start) + " before release " + repr(job.release_time)
-            )
+        for entry in entries:
+            if entry.start < float(job.release_time) - TOLERANCE:
+                release_problems.append(
+                    first.op_id + " starts at " + repr(entry.start) + " before release " + repr(job.release_time)
+                )
     add(
         "release_time",
         not release_problems,

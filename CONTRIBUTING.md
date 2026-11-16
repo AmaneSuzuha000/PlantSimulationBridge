@@ -27,7 +27,7 @@ The offline test suite exercises schemas, validation, `FakeBackend`, `FakeDispat
 
 ### Live Plant Simulation verification (Windows)
 
-When making changes under `psbridge/com/win32.py`, `psbridge/core/`, `psbridge/simtalk/dispatch.py`, or `psbridge/simtalk/jobshop.py`, validate against a real Plant Simulation installation using an isolated copy of a template `.spp` model:
+When making changes under `psbridge/com/win32.py`, `psbridge/core/`, or `psbridge/simtalk/` (`dispatch.py`, `jobshop.py`, `templates.py`), validate against a real Plant Simulation installation using an isolated copy of a template `.spp` model:
 
 ```powershell
 $env:PSBRIDGE_REAL_COM = "1"
@@ -37,6 +37,7 @@ python scripts/verify_contract.py
 python scripts/all_tools_smoke.py
 python scripts/real_machine_dispatch_smoke.py
 python scripts/real_machine_jobshop_smoke.py
+python scripts/mcp_stdio_smoke.py
 ```
 
 Include your Plant Simulation version and observed outputs in your pull request description.
@@ -45,4 +46,4 @@ Include your Plant Simulation version and observed outputs in your pull request 
 
 - Python 3.10+, standard library first. Keep `pythoncom` and `win32com` imports lazy inside COM connection paths so offline workflows stay cross-platform.
 - Write all documentation, docstrings, comments, and error messages in English.
-- Preserve safety invariants: never overwrite uncloned `.spp` files, never silently swallow mismatches or unsupported attributes, and always maintain the `NOT_VERIFIED` markers in `psbridge.simtalk.templates` until live-verified.
+- Preserve safety invariants: never overwrite uncloned `.spp` files, never silently swallow mismatches or unsupported attributes, and ensure generated SimTalk remains strictly verified and free of placeholders.

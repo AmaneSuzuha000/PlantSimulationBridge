@@ -1,6 +1,6 @@
 """Closed-loop demo: FIFO/SPT/EDD -> dispatch engine -> metrics -> independent cross-check.
 
-This is the smallest meaningful research loop defined in the audit plan:
+This is the minimal closed-loop dispatch benchmark:
 
   1. build one instance (or load it from JSON),
   2. run every dispatch policy on it, with several seeds and duration jitter,

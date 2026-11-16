@@ -136,3 +136,16 @@ def test_non_ascii_payload_survives_the_wire():
     text = response["result"]["content"][0]["text"]
     assert json.loads(text)["ok"] is True
     assert "\\u" not in text
+
+
+def test_non_finite_tool_payload_never_leaks_invalid_json(monkeypatch):
+    import psbridge.mcp.server as srv
+
+    monkeypatch.setattr(srv, "call_tool", lambda _name, _args: {"ok": True, "value": float("nan")})
+    response = handle_message(call("tools/call", {"name": "bridge_info", "arguments": {}}))
+    assert response["result"]["isError"] is True
+    text = response["result"]["content"][0]["text"]
+    assert "NaN" not in text
+    parsed = json.loads(text)
+    assert parsed["ok"] is False
+    assert parsed["error"]["code"] == "BACKEND_ERROR"

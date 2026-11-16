@@ -28,7 +28,6 @@ from psbridge.simtalk.jobshop import (
     build_job_shop_statements,
 )
 
-MODEL = "DeliveryConcept"
 UNITS = 20
 
 
@@ -56,16 +55,17 @@ def as_seconds(value) -> float:
 
 def run_case(template: Path, name: str, jobs: list[Job], *, expected_m1_work: float, expected_m2_work: float) -> dict:
     workdir = Path(tempfile.mkdtemp(prefix="psbridge-jobshop-"))
-    target = workdir / (MODEL + ".spp")
+    target = workdir / template.name
     shutil.copyfile(template, target)
 
-    frame = ".Models." + MODEL + ".Frame"
-    controller = ".Models." + MODEL + ".EventController"
-    backend = Win32ComBackend(prefer_running_instance=False)
+    backend = Win32ComBackend(model_root=workdir, quit_on_disconnect=True, prefer_running_instance=False)
     report: dict = {"case": name}
     try:
         backend.connect()
         backend.load_model(str(target))
+        root_frame = backend.default_frame_path
+        frame = root_frame + ".Frame" if backend.object_exists(root_frame + ".Frame") else root_frame
+        controller = root_frame + ".EventController"
         statements = build_job_shop_statements(jobs, frame)
         report["statements_executed"] = len(statements)
         for statement in statements:

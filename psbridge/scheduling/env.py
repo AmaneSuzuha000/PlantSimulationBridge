@@ -205,6 +205,12 @@ class DispatchEnv:
         self._truncated = False
         self._last_transition = None
         self._decision = self._engine.next_decision()
+        if self._decision is None:
+            state = self._engine.current_state()
+            if state.completed_operations >= state.total_operations:
+                self._terminated = True
+            else:
+                self._truncated = True
         self._observation = self._build_observation()
         return self._observation
 

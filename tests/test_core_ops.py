@@ -361,3 +361,22 @@ def test_ops_with_executor_still_reports_domain_errors(backend: FakeBackend) -> 
 def test_ops_rejects_a_missing_backend() -> None:
     with pytest.raises(ValidationError):
         SafeOps(None)  # type: ignore[arg-type]
+
+
+def test_start_and_run_reject_non_positive_end_time_and_negative_stats(
+    tmp_path: Path, backend: FakeBackend, ops: SafeOps
+) -> None:
+    for bad_end in (0.0, -5.0):
+        with pytest.raises(ValidationError):
+            ops.start_simulation(end_time=bad_end)
+        with pytest.raises(ValidationError):
+            ops.run_simulation(end_time=bad_end)
+    with pytest.raises(ValidationError):
+        ops.start_simulation(statistics_start=-1.0)
+
+
+def test_clone_rejects_same_path_with_different_relative_form(tmp_path: Path, backend: FakeBackend) -> None:
+    target = _saved_model(tmp_path, backend)
+    alias = str(tmp_path / "." / target.name)
+    with pytest.raises(ValidationError):
+        backend.clone_model(alias)

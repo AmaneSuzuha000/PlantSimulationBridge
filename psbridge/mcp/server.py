@@ -75,8 +75,20 @@ def _call_tool(params: Mapping[str, Any]) -> dict[str, Any]:
     if arguments is not None and not isinstance(arguments, Mapping):
         raise ValueError("tools/call 'arguments' must be an object when present")
     payload = call_tool(name, arguments)
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        payload = {
+            "ok": False,
+            "error": {
+                "code": "BACKEND_ERROR",
+                "message": "tool output is not strict JSON",
+                "details": {"tool": name, "error": str(exc)},
+            },
+        }
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
     return {
-        "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
+        "content": [{"type": "text", "text": encoded}],
         "isError": not payload.get("ok", True),
     }
 
@@ -166,7 +178,13 @@ def serve(stdin: TextIO, stdout: TextIO, stderr: TextIO | None = None) -> int:
                 response = handle_message(message)
             if response is None:
                 continue
-            stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+            try:
+                wire = json.dumps(response, ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError) as exc:
+                fallback = _error(response.get("id") if isinstance(response, Mapping) else None,
+                                  INTERNAL_ERROR, "non-serializable response", {"detail": str(exc)})
+                wire = json.dumps(fallback, ensure_ascii=False, allow_nan=False)
+            stdout.write(wire + "\n")
             stdout.flush()
     finally:
         close_session()

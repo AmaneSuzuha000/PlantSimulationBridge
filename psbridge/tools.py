@@ -121,6 +121,8 @@ def _policy_names(arguments: Mapping[str, Any]) -> tuple[str, ...]:
     unknown = [name for name in names if name not in available_policies()]
     if unknown:
         raise ValidationError("unknown policies", details={"unknown": unknown, "available": list(available_policies())})
+    if not names:
+        raise ValidationError("policies must not be empty")
     return tuple(names)
 
 
@@ -132,7 +134,9 @@ def _policy_name(arguments: Mapping[str, Any]) -> str:
 
 
 def _seeds(arguments: Mapping[str, Any]) -> tuple[int, ...]:
-    seeds = arguments.get("seeds", [0])
+    seeds = arguments.get("seeds")
+    if seeds is None:
+        return (0,)
     if not isinstance(seeds, Sequence) or isinstance(seeds, (str, bytes)):
         raise ValidationError("seeds must be a list of non-negative integers")
     result = []
@@ -191,7 +195,9 @@ def _name_or_path(value: Any, *, field_name: str) -> str:
 
 
 def _work_dir(arguments: Mapping[str, Any]) -> Path:
-    value = arguments.get("work_dir", DEFAULT_WORK_DIR)
+    value = arguments.get("work_dir")
+    if value is None:
+        return Path(DEFAULT_WORK_DIR)
     if not isinstance(value, str) or not value.strip():
         raise ValidationError("work_dir must be a non-empty string")
     if len(value) > 4096 or validation.CONTROL_CHAR_RE.search(value):
@@ -407,7 +413,8 @@ def _generate_simtalk(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     args = _arguments(arguments, allowed=("instance", "policy", "frame_path"), required=("instance", "policy"))
     instance = _instance_from(args["instance"])
     policy = _policy_name(args)
-    frame_path = validate_simtalk_path(args["frame_path"]) if "frame_path" in args else DEFAULT_FRAME_PATH
+    raw_frame = args.get("frame_path")
+    frame_path = DEFAULT_FRAME_PATH if raw_frame is None else validate_simtalk_path(raw_frame)
     model_spec = build_model_spec(instance)
     controls = control_method_sources(frame_path=frame_path)
     sources = {
@@ -449,29 +456,31 @@ def _schedule_vs_reference(arguments: Mapping[str, Any] | None) -> dict[str, Any
 
 def _list_runs(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     args = _arguments(arguments, allowed=("work_dir",), required=())
-    work_dir = _work_dir(args)
-    store = ResultStore(Path(work_dir) / "results")
+    resolved_dir = _work_dir(args).expanduser().resolve()
+    store = ResultStore(resolved_dir / "results")
     rows = store.read_run_dicts(strict=False)
-    compact = [
-        {
-            "run_id": row.get("run_id"),
-            "experiment_id": row.get("experiment_id"),
-            "policy": row.get("policy"),
-            "seed": row.get("seed"),
-            "status": row.get("status"),
-            "makespan": None if not row.get("metrics") else row["metrics"].get("makespan"),
-        }
-        for row in rows
-    ]
-    return _ok(work_dir=str(Path(work_dir).resolve()), run_count=len(compact), runs=compact, malformed_lines=list(store.malformed_lines))
+    compact = []
+    for row in rows:
+        metrics = row.get("metrics")
+        compact.append(
+            {
+                "run_id": row.get("run_id"),
+                "experiment_id": row.get("experiment_id"),
+                "policy": row.get("policy"),
+                "seed": row.get("seed"),
+                "status": row.get("status"),
+                "makespan": metrics.get("makespan") if isinstance(metrics, Mapping) else None,
+            }
+        )
+    return _ok(work_dir=str(resolved_dir), run_count=len(compact), runs=compact, malformed_lines=list(store.malformed_lines))
 
 
 def _experiment_summary(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     args = _arguments(arguments, allowed=("work_dir",), required=())
-    work_dir = _work_dir(args)
-    store = ResultStore(Path(work_dir) / "results")
+    resolved_dir = _work_dir(args).expanduser().resolve()
+    store = ResultStore(resolved_dir / "results")
     rows = store.read_run_dicts(strict=False)
-    return _ok(work_dir=str(Path(work_dir).resolve()), run_count=len(rows), summary=store.summarize(rows))
+    return _ok(work_dir=str(resolved_dir), run_count=len(rows), summary=store.summarize(rows))
 
 
 # ---------------------------------------------------------------------------
@@ -628,8 +637,9 @@ def _model_list_objects(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     frame = _frame(args)
     ops = _session(args)
     objects = ops.list_objects(frame)
+    resolved_frame = frame if frame is not None else (ops.resolve_frame(None) if hasattr(ops, "resolve_frame") else None)
     return _ok(
-        frame=frame,
+        frame=resolved_frame,
         count=len(objects),
         objects=[{"path": item.path, "name": item.name, "class_name": item.class_name} for item in objects],
     )
@@ -756,6 +766,8 @@ def _simulation_start(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     )
     _validate_session_args(args)
     end_time = _optional_number(args, "end_time")
+    if end_time is not None and end_time <= 0.0:
+        raise ValidationError("end_time must be > 0", details={"end_time": end_time})
     statistics_start = 0.0 if "statistics_start" not in args else _optional_number(args, "statistics_start")
     if statistics_start is not None and statistics_start < 0.0:
         raise ValidationError("statistics_start must be >= 0", details={"statistics_start": statistics_start})
@@ -795,6 +807,8 @@ def _simulation_run(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     )
     _validate_session_args(args)
     end_time = _optional_number(args, "end_time")
+    if end_time is not None and end_time <= 0.0:
+        raise ValidationError("end_time must be > 0", details={"end_time": end_time})
     timeout = _number(args, "timeout", 300.0)
     if timeout <= 0.0:
         raise ValidationError("timeout must be positive", details={"timeout": timeout})
@@ -893,7 +907,7 @@ def _simulation_set_source(arguments: Mapping[str, Any] | None) -> dict[str, Any
         required=("path", "units", "interval"),
     )
     _validate_session_args(args)
-    path = validation.validate_object_path(args["path"], field_name="path")
+    path = _name_or_path(args["path"], field_name="path")
     units = _int(args, "units")
     if units < 1:
         raise ValidationError("units must be a positive integer", details={"units": units})
@@ -903,14 +917,12 @@ def _simulation_set_source(arguments: Mapping[str, Any] | None) -> dict[str, Any
     start = _number(args, "start", 0.0)
     if start < 0.0:
         raise ValidationError("start must be zero or a positive number of seconds", details={"start": start})
-    _ = _frame(args)
+    frame = _frame(args)
     ops = _session(args)
-    ops.configure_source(
-        path,
-        units=units,
-        interval=interval,
-        start=start,
-    )
+    if frame is not None and not path.startswith("."):
+        ops.configure_source(path, units=units, interval=interval, start=start, frame_path=frame)
+    else:
+        ops.configure_source(path, units=units, interval=interval, start=start)
     return _ok(path=path, units=units)
 
 

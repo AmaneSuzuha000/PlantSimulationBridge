@@ -27,9 +27,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from psbridge.core.validation import (
+    format_simtalk_number,
     validate_coordinate,
     validate_identifier,
     validate_object_path,
+    validate_simtalk_object_name,
 )
 from psbridge.errors import ValidationError
 
@@ -82,6 +84,7 @@ def build_schedule_source_statements(
     """
     if not isinstance(job, ScheduledJob):
         raise ValidationError("job must be a ScheduledJob", details={"type": type(job).__name__})
+    validate_simtalk_object_name(job.name, field_name="job name")
     frame_path = validate_object_path(frame_path, field_name="frame path")
     source_class = validate_object_path(source_class, field_name="source class")
     mu_class = validate_object_path(mu_class, field_name="MU class")
@@ -161,5 +164,4 @@ def _wip(path: str) -> str:
 
 
 def _seconds(value: float) -> str:
-    text = f"{float(value):.4f}".rstrip("0").rstrip(".")
-    return text if text else "0"
+    return format_simtalk_number(value, field_name="seconds")

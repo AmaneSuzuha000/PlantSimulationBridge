@@ -414,7 +414,7 @@ class FakeBackend:
         if self._model_path is None:
             raise BackendError("the current model has no file path; save it before cloning")
         target = self._validate_file_path(target_path)
-        if target == self._model_path:
+        if Path(target).expanduser().resolve() == Path(self._model_path).expanduser().resolve():
             raise ValidationError(
                 "clone target must differ from the current model path",
                 details={"path": target},
@@ -887,7 +887,7 @@ class FakeBackend:
 
     @staticmethod
     def _hash_payload(payload: Mapping[str, Any]) -> str:
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def _emit(self, kind: str, object_path: str, /, **payload: Any) -> None:

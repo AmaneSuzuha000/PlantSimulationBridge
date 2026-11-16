@@ -293,6 +293,16 @@ def test_due_date_round_trips() -> None:
     assert "12.5" in text
 
 
+def test_numeric_formatting_handles_extreme_ranges_and_tiny_positives() -> None:
+    assert T._num(0.0) == "0"
+    assert T._num(-0.0) == "0"
+    assert T._num(2_000_000_000.0) == "2000000000.0"
+    assert T._num(1.0e12) == "1000000000000.0"
+    assert T._num(1.0e16) == "1e+16"
+    assert T._num(1.0e-12) == "1e-12"
+    assert T._num(1.0e-12) != "0"
+
+
 def test_tables_source_rejects_wrong_type() -> None:
     with pytest.raises(ValidationError):
         T.initialize_tables_source(build_model_spec(make_instance()))  # type: ignore[arg-type]

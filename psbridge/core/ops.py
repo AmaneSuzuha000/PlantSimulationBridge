@@ -404,10 +404,16 @@ class SafeOps:
 
     # -- model hashes / clones -------------------------------------------
     def configure_source(
-        self, path: str, *, units: int, interval: float, start: float = 0.0
+        self,
+        path: str,
+        *,
+        units: int,
+        interval: float,
+        start: float = 0.0,
+        frame_path: str | None = None,
     ) -> None:
         self.ensure_connected()
-        target = validation.validate_object_path(path, field_name="path")
+        target = self._resolve_path(path, frame_path=frame_path)
         # Measured: an interval of 0 was accepted here and only failed deep in
         # SimTalk as a bare "execution failed". A Source that emits infinitely
         # often is nonsense, so say so before touching the model.
@@ -515,10 +521,14 @@ class SafeOps:
         seconds: float | None = None
         if end_time is not None:
             seconds = validation.validate_coordinate(end_time, field_name="end_time")
+            if seconds <= 0.0:
+                raise ValidationError("end_time must be > 0", details={"end_time": seconds})
         offset: float | None = None
         if statistics_start is not None:
             offset = validation.validate_coordinate(
                 statistics_start, field_name="statistics_start")
+            if offset < 0.0:
+                raise ValidationError("statistics_start must be >= 0", details={"statistics_start": offset})
         with self._exclusive("start"):
             if offset is not None:
                 self._run(self._backend.set_statistics_start, offset)
@@ -574,6 +584,8 @@ class SafeOps:
             if now >= deadline:
                 break
             time.sleep(min(interval, max(0.0, deadline - now)))
+        with contextlib.suppress(Exception):
+            self._run(self._backend.stop)
         raise BackendError(
             "simulation did not stop before the timeout",
             details={"timeout": budget, "end_time": end_time},
@@ -590,7 +602,7 @@ class SafeOps:
             target = self._get_model_path()
         if target is None:
             raise ValidationError("no model path is available for hashing")
-        file_path = Path(target)
+        file_path = Path(target).expanduser()
         if not file_path.is_file():
             return ModelFingerprint(path=str(file_path), exists=False, sha256=None, size=None)
         return ModelFingerprint(
@@ -734,6 +746,11 @@ class SafeOps:
             return validation.validate_object_path(derived, field_name="frame_path")
         return validation.validate_object_path(DEFAULT_FRAME_PATH, field_name="frame_path")
 
+    def resolve_frame(self, frame_path: str | None = None) -> str:
+        """Resolve a caller frame path or the loaded model's default frame path."""
+        self.ensure_connected()
+        return self._frame(frame_path)
+
     def _resolve_path(self, value: str, *, frame_path: str | None = None) -> str:
         """Accept either an absolute object path or a bare object name."""
         if not isinstance(value, str):
@@ -762,7 +779,7 @@ class SafeOps:
         current = self._get_model_path()
         if current is None:
             return
-        if Path(current).resolve() == Path(self._original.path).resolve():
+        if Path(current).expanduser().resolve() == Path(self._original.path).expanduser().resolve():
             raise ModelMutationDenied(
                 "refusing to mutate the original research model in place; clone it for experiments",
                 details={"action": action, "path": path, "model_path": current},

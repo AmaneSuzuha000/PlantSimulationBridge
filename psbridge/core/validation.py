@@ -291,6 +291,28 @@ def validate_coordinate(value: Any, *, field_name: str = "coordinate") -> float:
     return number
 
 
+def format_simtalk_number(value: Any, *, field_name: str = "number") -> str:
+    """Format a validated finite number as a SimTalk integer/real literal.
+
+    Plant Simulation 13 parses unsuffixed integer literals as 32-bit signed
+    integers and raises a syntax/overflow error outside [-2^31, 2^31 - 1].
+    Values within ``[-2_000_000_000, 2_000_000_000]`` that are exact integers
+    render as plain integers; larger integers render with ``.0`` (or scientific
+    notation at >= 1e15); and non-integers/tiny magnitudes keep exact ``repr``
+    so small positive durations never silently round to ``"0"``.
+    """
+    number = validate_coordinate(value, field_name=field_name)
+    if number == 0.0:
+        return "0"
+    if number.is_integer():
+        integer = int(number)
+        if abs(integer) < 2_000_000_000:
+            return str(integer)
+        if abs(integer) < 1_000_000_000_000_000:
+            return f"{integer}.0"
+    return repr(number)
+
+
 # ---------------------------------------------------------------------------
 # class and attribute allow-lists
 # ---------------------------------------------------------------------------
@@ -638,11 +660,61 @@ CONTROL_NAMES = ("EntranceCtrl", "ExitCtrl", "InitCtrl")
 MU_ATTRIBUTE_KINDS = frozenset({"integer", "string", "real", "boolean"})
 
 
+#: SimTalk statement/expression keywords that cannot appear unquoted as an
+#: object path segment (e.g. ``.Models.Model.end`` fails in ExecuteSimTalk).
+SIMTALK_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "and",
+        "div",
+        "do",
+        "downto",
+        "else",
+        "elseif",
+        "end",
+        "false",
+        "for",
+        "if",
+        "is",
+        "loop",
+        "mod",
+        "next",
+        "not",
+        "or",
+        "param",
+        "repeat",
+        "result",
+        "return",
+        "root",
+        "self",
+        "then",
+        "to",
+        "true",
+        "until",
+        "var",
+        "void",
+        "wait",
+        "while",
+        "xor",
+    }
+)
+
+
 #: A frame node handle: <frame path>.node(<expression>). Measured: a newly
 #: created information-flow object cannot be renamed and is not reachable by
 #: dotted name, so this is the only handle the product offers for one.
 _NODE_HANDLE_RE = re.compile(r"^(?P<frame>\.[A-Za-z0-9_.]+)\.node\((?P<index>[^()]+)\)\Z")
-_NODE_INDEX_RE = re.compile(r"^[A-Za-z0-9_. ]+\Z")
+_NODE_POS_INT_RE = re.compile(r"^[1-9][0-9]{0,9}\Z")
+
+
+def validate_simtalk_object_name(value: Any, *, field_name: str = "name") -> str:
+    """Validate an unprefixed SimTalk object identifier and reject reserved keywords."""
+    identifier = validate_identifier(value, field_name=field_name)
+    if identifier.casefold() in SIMTALK_KEYWORDS:
+        raise ValidationError(
+            field_name + " must not be a reserved SimTalk keyword",
+            details={"field": field_name, "value": identifier},
+        )
+    return identifier
 
 
 def validate_object_handle(value: Any, *, field_name: str = "path") -> str:
@@ -660,18 +732,20 @@ def validate_object_handle(value: Any, *, field_name: str = "path") -> str:
         raise ValidationError(
             field_name + " must not contain control characters", details={"field": field_name}
         )
-    text = value.strip()
-    match = _NODE_HANDLE_RE.match(text)
+    match = _NODE_HANDLE_RE.match(value)
     if match is None:
-        return validate_object_path(text, field_name=field_name)
+        return validate_object_path(value, field_name=field_name)
     validate_object_path(match.group("frame"), field_name=field_name)
-    index = match.group("index").strip()
-    if not index or not _NODE_INDEX_RE.match(index):
-        raise ValidationError(
-            field_name + " node index is not a SimTalk-safe expression",
-            details={"field": field_name, "index": index},
-        )
-    return text
+    index = match.group("index")
+    if _NODE_POS_INT_RE.match(index):
+        return value
+    if index.endswith(".NumNodes") and index.startswith("."):
+        validate_object_path(index, field_name=field_name)
+        return value
+    raise ValidationError(
+        field_name + " node index is not a SimTalk-safe expression",
+        details={"field": field_name, "index": index},
+    )
 
 
 def validate_control_name(value: Any) -> str:

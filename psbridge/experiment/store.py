@@ -82,15 +82,17 @@ def _accumulate_metrics(
     buckets: dict[str, list[float]],
     utilization: dict[str, list[float]],
 ) -> None:
-    if not metrics:
+    if not isinstance(metrics, Mapping):
         return
     for field in METRIC_FIELDS:
         value = metrics.get(field)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             buckets[field].append(float(value))
-    for machine_id, value in dict(metrics.get("utilization", {})).items():
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            utilization[str(machine_id)].append(float(value))
+    raw_util = metrics.get("utilization")
+    if isinstance(raw_util, Mapping):
+        for machine_id, value in raw_util.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                utilization[str(machine_id)].append(float(value))
 
 
 def _finalize_metrics(
@@ -147,10 +149,13 @@ def summarize_records(records: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         engine_kinds[str(row.get("engine_kind", ""))] += 1
         backends[str(row.get("backend", ""))] += 1
         instance_hashes[experiment_id].add(str(row.get("instance_hash", "")))
-        validity = row.get("validity") or {}
-        for check in validity.get("checks", ()):
-            if not check.get("passed", True):
-                validity_failures[str(check.get("name", ""))] += 1
+        validity = row.get("validity")
+        if isinstance(validity, Mapping):
+            checks = validity.get("checks")
+            if isinstance(checks, Iterable):
+                for check in checks:
+                    if isinstance(check, Mapping) and not check.get("passed", True):
+                        validity_failures[str(check.get("name", ""))] += 1
         error = row.get("error")
         if error:
             if status == "failed":
@@ -364,7 +369,11 @@ class ResultStore:
 
 def run_record_from_dict(data: Mapping[str, Any]) -> RunRecord:
     """Rebuild a RunRecord from its to_dict() representation."""
+    if not isinstance(data, Mapping):
+        raise ValidationError("run record must be a mapping", details={"type": type(data).__name__})
     validity_data = data.get("validity") or {"valid": False, "checks": []}
+    if not isinstance(validity_data, Mapping):
+        raise ValidationError("run record 'validity' must be a mapping")
     checks = tuple(
         _check_from_dict(check) for check in validity_data.get("checks", ())
     )
@@ -372,6 +381,8 @@ def run_record_from_dict(data: Mapping[str, Any]) -> RunRecord:
     metrics_data = data.get("metrics")
     metrics = None if metrics_data is None else Metrics.from_dict(metrics_data)
     provenance_data = data["provenance"]
+    if not isinstance(provenance_data, Mapping):
+        raise ValidationError("run record 'provenance' must be a mapping")
     provenance = Provenance(
         bridge_version=provenance_data["bridge_version"],
         instance_hash=provenance_data["instance_hash"],

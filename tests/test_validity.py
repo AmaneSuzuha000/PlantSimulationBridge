@@ -193,3 +193,22 @@ def test_report_is_json_serialisable() -> None:
     json.dumps(payload)
     assert payload["valid"] is True
     assert all(check["passed"] for check in payload["checks"])
+
+
+def test_duplicate_operation_violations_are_reported_in_precedence_and_release() -> None:
+    inst = instance_2x2()
+    # J1_O1 appears valid first, then appears again violating precedence/release on J1_O2 / J2_O1.
+    schedule = (
+        ScheduledOperation("J1_O1", "J1", "M1", 0.0, 3.0),
+        ScheduledOperation("J1_O2", "J1", "M2", 3.0, 5.0),
+        ScheduledOperation("J1_O2", "J1", "M2", 1.0, 3.0),  # starts before J1_O1 ends at 3.0
+        ScheduledOperation("J2_O1", "J2", "M1", 3.0, 5.0),
+        ScheduledOperation("J2_O1", "J2", "M1", 0.5, 2.5),  # starts before J2 release 1.0
+        ScheduledOperation("J2_O2", "J2", "M2", 5.0, 9.0),
+    )
+    report = validate_schedule(inst, schedule)
+    assert not report.valid
+    failures = failure_names(report)
+    assert "no_duplicate_operations" in failures
+    assert "precedence" in failures
+    assert "release_time" in failures

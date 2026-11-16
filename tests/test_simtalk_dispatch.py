@@ -95,3 +95,12 @@ def test_three_machines_get_three_distinct_targets() -> None:
     program = build_exit_control_program((P1, P2, p3))
     for target in (P1, P2, p3):
         assert "@.move(" + target + ");" in program
+
+
+def test_rejects_keyword_job_name_and_formats_extreme_releases() -> None:
+    with pytest.raises(ValidationError, match="keyword"):
+        build_schedule_source_statements(ScheduledJob("end", 0, 1), FRAME)
+    large = " ".join(build_schedule_source_statements(ScheduledJob("J", 3_000_000_000.0, 1), FRAME))
+    assert ".Start := 3000000000.0;" in large
+    tiny = " ".join(build_schedule_source_statements(ScheduledJob("J", 1e-6, 1), FRAME))
+    assert ".Start := 1e-06;" in tiny

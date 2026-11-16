@@ -416,3 +416,25 @@ def test_engine_that_returns_no_decision_marks_truncated() -> None:
     _, _, terminated, truncated, _ = env.step("J1_O1")
     assert truncated is True
     assert terminated is False
+
+
+def test_reset_marks_truncated_when_no_initial_decision_exists() -> None:
+    class ImmediatelyDoneEngine(ReferenceEngine):
+        def reset(self, instance, seed, *, horizon=None):
+            return super().reset(instance, seed, horizon=horizon)
+
+        def next_decision(self):
+            return None
+
+    instance = Instance(
+        instance_id="env_immediate_truncation",
+        jobs=(Job("J1", (op("J1_O1", "J1", 0, "M1", 5.0),), release_time=0.0),),
+        machines=(Machine("M1"),),
+    )
+    env = DispatchEnv(ImmediatelyDoneEngine(), instance, horizon=1.0)
+    observation = env.reset()
+    assert observation["truncated"] is True
+    assert observation["terminated"] is False
+    assert env.truncated is True
+    assert env.terminated is False
+    assert env.available_actions() == ()

@@ -16,7 +16,7 @@ Initial public release of **PlantSimulationBridge (`psbridge`)**.
   - Strict identifier, dotted path, SimTalk source, class allow-list, and per-class attribute specification validators.
   - `SafeOps` with `model_root` confinement, `protect_original` SHA-256 clone verification, mandatory property/table/method read-back checks, torn-read-free `status()`, and async post-`start` `startup_grace` synchronization.
 - **Scheduling, offline experiments & RL environment (`psbridge.experiment`, `psbridge.scheduling`)**:
-  - `DispatchEngine` protocol, `FakeDispatchEngine`, independent `reference_schedule` oracle, `FIFO`/`SPT`/`EDD` policies, time-weighted exact average WIP metrics, schedule validity gates, crash-tolerant `ResultStore` (JSONL), and `SchedulingEnv`.
+  - `DispatchEngine` protocol, `FakeDispatchEngine`, independent `reference_schedule` oracle, `FIFO`/`SPT`/`EDD` policies, time-weighted exact average WIP metrics, schedule validity gates, crash-tolerant `ResultStore` (JSONL), and `DispatchEnv`.
 - **SimTalk generators & tooling (`psbridge.simtalk`, `psbridge.apiquery`, `tools/`)**:
   - Live-verified scheduled source, exit-control routing (`dispatch.py`), uniform and heterogeneous buffered job-shop (`jobshop.py`), and full table-driven `FIFO`/`SPT`/`EDD` + `ParallelProc` template generators (`templates.py`) against Plant Simulation 13.
   - Plant Simulation HTML help indexer (`tools/pshelp_index.py`), COM attribute prober (`tools/api_surface.py`), and `ApiIndex` query CLI.

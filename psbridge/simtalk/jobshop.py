@@ -31,9 +31,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from psbridge.core.validation import (
+    format_simtalk_number,
     validate_coordinate,
     validate_identifier,
     validate_object_path,
+    validate_simtalk_object_name,
 )
 from psbridge.errors import ValidationError
 
@@ -98,8 +100,7 @@ class Job:
 
 
 def _seconds(value: float) -> str:
-    text = f"{float(value):.4f}".rstrip("0").rstrip(".")
-    return text if text else "0"
+    return format_simtalk_number(value, field_name="seconds")
 
 
 def _quote(text: str) -> str:
@@ -138,7 +139,7 @@ def build_job_shop_statements(jobs, frame_path: str, *, drain: str = "Drain1") -
     node() and that handle has to be captured the moment the object exists.
     """
     frame_path = validate_object_path(frame_path, field_name="frame_path")
-    drain = validate_identifier(drain, field_name="drain name")
+    drain = validate_simtalk_object_name(drain, field_name="drain name")
     jobs = list(jobs)
     if not jobs:
         raise ValidationError("a job shop needs at least one job")
@@ -156,11 +157,11 @@ def build_job_shop_statements(jobs, frame_path: str, *, drain: str = "Drain1") -
     use_dynamic_durations = bool(heterogeneous_machines)
     durations = {name: values[0] for name, values in by_machine.items()}
 
-    reserved_names = {"M_" + name for name in durations}
+    reserved_names = {validate_identifier("M_" + name, field_name="machine object name") for name in durations}
     for job in jobs:
-        reserved_names.add("Src_" + job.name)
+        reserved_names.add(validate_identifier("Src_" + job.name, field_name="source object name"))
         for step in range(2, len(job.operations) + 1):
-            reserved_names.add("Buf_" + job.name + "_" + str(step))
+            reserved_names.add(validate_identifier("Buf_" + job.name + "_" + str(step), field_name="buffer object name"))
     if drain in reserved_names:
         raise ValidationError("drain name collides with generated object name", details={"drain": drain})
     statements: list[str] = []

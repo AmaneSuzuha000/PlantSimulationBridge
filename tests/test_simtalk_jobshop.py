@@ -149,3 +149,24 @@ def test_single_operation_job_goes_straight_to_the_drain():
     statements = build_job_shop_statements([Job("A", 5, 0, 1, (Operation("M1", 2.0),))], FRAME)
     body = next(s for s in statements if "Program" in s and "@.OpIndex = " in s)
     assert "@.move(" + FRAME + ".Drain1)" in body
+
+
+def test_rejects_overlong_derived_object_names_and_keyword_drain():
+    long_job = Job("J" * 61, 1, 0, 1, (Operation("M1", 2.0),))
+    with pytest.raises(ValidationError):
+        build_job_shop_statements([long_job], FRAME)
+
+    long_machine = Job("A", 1, 0, 1, (Operation("M" * 63, 2.0),))
+    with pytest.raises(ValidationError):
+        build_job_shop_statements([long_machine], FRAME)
+
+    valid_job = Job("A", 1, 0, 1, (Operation("M1", 2.0),))
+    with pytest.raises(ValidationError, match="keyword"):
+        build_job_shop_statements([valid_job], FRAME, drain="end")
+
+
+def test_large_and_submillisecond_durations_keep_valid_simtalk_literals():
+    jobs = [Job("A", 1, 0.0, 1.0, (Operation("M1", 3_000_000_000.0), Operation("M2", 1e-6)))]
+    text = "\n".join(build_job_shop_statements(jobs, FRAME))
+    assert "3000000000.0;" in text
+    assert "1e-06;" in text

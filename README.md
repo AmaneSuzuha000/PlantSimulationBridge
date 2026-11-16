@@ -35,7 +35,7 @@ Plant Simulation exposes its automation interface (`Tecnomatix.PlantSimulation.R
   - Allow-listed classes and per-class attributes with mandatory read-back verification (`VerificationFailed` on mismatch).
   - Unconditional `SetNoMessageBox(True)` on connect to prevent modal COM stalls, and automatic session cleanup (`Quit()` for backend-owned instances) on exit.
 - **Verified SimTalk dispatch, job-shop & table-driven generators**: `psbridge.simtalk.dispatch`, `psbridge.simtalk.jobshop` (supporting both uniform and heterogeneous per-operation durations via `@.OpDuration`), and `psbridge.simtalk.templates` (`FIFO`/`SPT`/`EDD` table-driven routing, `Delivery Table` releases, `SingleProc`/`ParallelProc` support, verified bit-for-bit against the reference oracle on Plant Simulation 13).
-- **Offline scheduling experiments & RL environment**: `FakeDispatchEngine`, `FIFO`/`SPT`/`EDD` policies, a completely independent reference oracle (`tests/test_crosscheck.py`), exact time-weighted WIP and tardiness metrics, `SchedulingEnv` (`reset` / `step` / `action_mask`), and crash-tolerant JSONL result storage.
+- **Offline scheduling experiments & RL environment**: `FakeDispatchEngine`, `FIFO`/`SPT`/`EDD` policies, a completely independent reference oracle (`tests/test_crosscheck.py`), exact time-weighted WIP and tardiness metrics, `DispatchEnv` (`reset` / `step` / `action_mask`), and crash-tolerant JSONL result storage.
 - **Help index & COM surface tooling**: `tools/pshelp_index.py`, `tools/api_surface.py`, and `psbridge.apiquery` build searchable JSON inventories from local Plant Simulation HTML help files and inspect live COM readability.
 
 ## Requirements

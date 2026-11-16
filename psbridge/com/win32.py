@@ -170,10 +170,7 @@ def _quote(text: str) -> str:
 
 def _number(value: Any, *, field_name: str) -> str:
     """Render a validated finite number as a SimTalk literal."""
-    number = validation.validate_coordinate(value, field_name=field_name)
-    if number == int(number):
-        return str(int(number))
-    return repr(number)
+    return validation.format_simtalk_number(value, field_name=field_name)
 
 
 def _format_value(value: Any) -> str:
@@ -538,10 +535,13 @@ def build_controller_start(controller_path: str = DEFAULT_CONTROLLER_PATH, end_t
     body = ["psbridgeController := str_to_obj(" + _quote(path) + ");"]
     if end_time is not None:
         # Measured: the stop period is the attribute "End", a RELATIVE period,
-        # and it takes a plain number of seconds. "EndTime" does not exist on
-        # this build, and a time literal such as 0:01:00 is a syntax error in
-        # SimTalk source -- that pair made every start fail.
-        body.append("psbridgeController.End := " + _number(end_time, field_name="end_time") + ";")
+        # and it takes a plain positive number of seconds. "EndTime" does not
+        # exist on this build, and a time literal such as 0:01:00 is a syntax
+        # error in SimTalk source -- that pair made every start fail.
+        end_seconds = validation.validate_coordinate(end_time, field_name="end_time")
+        if end_seconds <= 0.0:
+            raise ValidationError("end_time must be > 0", details={"end_time": end_seconds})
+        body.append("psbridgeController.End := " + _number(end_seconds, field_name="end_time") + ";")
     body.append("psbridgeController.start();")
     return _build(["var psbridgeController : object;"], body)
 
@@ -743,6 +743,9 @@ class Win32ComBackend:
             should_quit = self._owns_instance
         self._owns_instance = False
         self._attached_to_running = None
+        self._discovered_frame = None
+        if should_quit:
+            self._model_path = None
         if should_quit and app is not None:
             try:
                 app.Quit()
@@ -793,7 +796,7 @@ class Win32ComBackend:
         if self._model_path is None:
             raise BackendError("the current model has no path; save it before cloning")
         checked = self._check_model_path(target_path)
-        if checked == self._model_path:
+        if Path(checked).expanduser().resolve() == Path(self._model_path).expanduser().resolve():
             raise ValidationError("clone target must differ from the current model path", details={"path": checked})
         self.save_model(checked)
         self.close_model()
@@ -836,34 +839,6 @@ class Win32ComBackend:
                 )
             objects.append(ObjectInfo(path=frame + "." + identifier, name=identifier, class_name=class_path))
         return tuple(objects)
-
-    def _read_table_rows(self, table_path: str, *, columns: int) -> list[tuple[str, ...]]:
-        """Read a table's populated rows, one GetValue per cell.
-
-        Measured: TableFile cells are 1-based and indexed as ``[column, row]``
-        (``xDim`` columns, ``yDim`` rows). Default columns are string-typed,
-        so every cell comes back as a string and empty cells are ``""``.
-        """
-        rows_raw = self._call("GetValue", "to_str(" + table_path + ".yDim)")
-        if rows_raw in (None, ""):
-            return []
-        try:
-            row_count = int(float(str(rows_raw)))
-        except (TypeError, ValueError) as exc:
-            raise BackendError(
-                "table dimension did not come back as a number",
-                details={"table": table_path, "yDim": repr(rows_raw)[:100]},
-            ) from exc
-        records: list[tuple[str, ...]] = []
-        for row in range(1, row_count + 1):
-            cells = tuple(
-                str(self._call("GetValue", table_path + "[" + str(col) + "," + str(row) + "]") or "")
-                for col in range(1, columns + 1)
-            )
-            if not any(cells):
-                continue
-            records.append(cells)
-        return records
 
     def object_exists(self, path: str) -> bool:
         target = validation.validate_object_path(path)
@@ -1357,7 +1332,7 @@ class Win32ComBackend:
                 "state": status.state,
             },
         }
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     # -- internals -------------------------------------------------------

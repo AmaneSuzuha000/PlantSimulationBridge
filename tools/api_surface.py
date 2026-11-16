@@ -38,21 +38,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from psbridge.com.win32 import Win32ComBackend
 
-TEMPLATE = Path(
-    os.environ.get(
-        "PSBRIDGE_TEMPLATE",
-        r"C:\Program Files\Siemens\Tecnomatix Plant Simulation 13\Examples\Demo\DeliveryConcept.spp",
-    )
+_DEFAULT_TEMPLATES = (
+    Path(r"C:\Program Files\Siemens\Tecnomatix Plant Simulation 13\Examples\Demo\DeliveryConcept.spp"),
+    Path(r"E:\Software\Siemens\Tecnomatix Plant Simulation 13\Examples\Demo\DeliveryConcept.spp"),
 )
-MODEL = "DeliveryConcept"
+
+
+def resolve_template(explicit: str | None = None) -> Path:
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit))
+    env_val = os.environ.get("PSBRIDGE_TEMPLATE")
+    if env_val:
+        candidates.append(Path(env_val))
+    candidates.extend(_DEFAULT_TEMPLATES)
+    for path in candidates:
+        if path.exists():
+            return path
+    searched = ", ".join(str(p) for p in candidates)
+    raise FileNotFoundError("Plant Simulation template .spp not found; set PSBRIDGE_TEMPLATE (checked: " + searched + ")")
+
 
 CLASSES = {
-    # Paths verified on the real product by real-machine-probe/class_discover.py,
-    # which records createObject acceptance for every candidate it tries. Most
-    # of these are obvious; the non-obvious ones are .MaterialFlow.Assembly
-    # (there is no AssemblyStation) and the fact that MU classes are not
-    # creatable at all -- .MUs.Entity reaches createObject only as a class
-    # reference in Source.Path, never as an object.
+    # Verified creatable class paths against Plant Simulation 13. Notably,
+    # Assembly stations use .MaterialFlow.Assembly (not AssemblyStation), and
+    # MU classes (.MUs.Entity) cannot be created on frames directly via
+    # createObject -- only referenced by Source.Path / Delivery Tables.
     "Source": ".MaterialFlow.Source",
     "Drain": ".MaterialFlow.Drain",
     "SingleProc": ".MaterialFlow.SingleProc",
@@ -88,10 +99,7 @@ CLASSES = {
 
 # Objects that already exist in the template model: probing them avoids
 # creating something whose semantics differ from the real one.
-EXISTING = {
-    "EventController": ".Models." + MODEL + ".EventController",
-    "Frame": ".Models." + MODEL + ".Frame",
-}
+EXISTING = ("EventController", "Frame")
 
 SKIP = {
     "start", "stop", "reset", "init", "quit", "close", "open", "load", "save",
@@ -188,14 +196,17 @@ def read_attribute(backend, handle, name):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--index", default=str(Path(__file__).resolve().parent.parent.parent
-                                               / "evidence" / "plant-sim-bridge" / "api_index.json"))
+    parser.add_argument("--index", default=os.environ.get("PSBRIDGE_API_INDEX", ""))
+    parser.add_argument("--template", default=None, help="path to base .spp model (or set PSBRIDGE_TEMPLATE)")
     parser.add_argument("--classes", default="all",
                         help="comma-separated owner names, or 'all' for the whole catalog")
     parser.add_argument("--out", default="api_surface.json")
     parser.add_argument("--budget", type=float, default=90.0)
     args = parser.parse_args(argv)
 
+    if not args.index:
+        parser.error("pass --index or set PSBRIDGE_API_INDEX to api_index.json")
+    template = resolve_template(args.template)
     index = load_index(Path(args.index))
     if args.classes.strip().lower() == "all":
         wanted = list(CLASSES) + list(EXISTING)
@@ -203,19 +214,20 @@ def main(argv=None) -> int:
         wanted = [name.strip() for name in args.classes.split(",") if name.strip()]
 
     workdir = Path(tempfile.mkdtemp(prefix="psbridge-surface-"))
-    target = workdir / (MODEL + ".spp")
-    shutil.copyfile(TEMPLATE, target)
+    target = workdir / template.name
+    shutil.copyfile(template, target)
 
-    backend = Win32ComBackend()
-    report = {"template": str(TEMPLATE), "classes": {}}
+    backend = Win32ComBackend(model_root=workdir, quit_on_disconnect=True, prefer_running_instance=False)
+    report = {"template": str(template), "classes": {}}
     try:
         backend.connect()
         backend.load_model(str(target))
-        frame = ".Models." + MODEL + ".Frame"
+        root_frame = backend.default_frame_path
+        frame = root_frame + ".Frame" if backend.object_exists(root_frame + ".Frame") else root_frame
 
         for owner in wanted:
             if owner in EXISTING:
-                handle = EXISTING[owner]
+                handle = root_frame if owner == "Frame" and not backend.object_exists(root_frame + ".Frame") else root_frame + "." + owner
                 documented = attributes_for(index, owner)
                 readable, failed = [], []
                 started = time.monotonic()

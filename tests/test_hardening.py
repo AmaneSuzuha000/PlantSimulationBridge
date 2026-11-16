@@ -62,6 +62,20 @@ def test_validators_reject_trailing_newline_injection() -> None:
         validation.validate_object_path(".Models.Model.M1\n", field_name="path")
     with pytest.raises(ValidationError):
         validation.validate_object_handle(".Models.Model.node(1)\n", field_name="path")
+    for bad_handle in (
+        ".Models.Model.node(0)",
+        ".Models.Model.node(1 or true)",
+        ".Models.Model.node(deleteModel)",
+        " .Models.Model.node(1)",
+        ".Models.Model.node( 1 )",
+    ):
+        with pytest.raises(ValidationError):
+            validation.validate_object_handle(bad_handle, field_name="path")
+    assert validation.validate_object_handle(".Models.Model.node(1)", field_name="path") == ".Models.Model.node(1)"
+    assert (
+        validation.validate_object_handle(".Models.Model.node(.Models.Model.NumNodes)", field_name="path")
+        == ".Models.Model.node(.Models.Model.NumNodes)"
+    )
     with pytest.raises(ValidationError):
         templates.validate_simtalk_path(".Models.Model\n", field_name="frame_path")
 
@@ -451,7 +465,10 @@ def test_tools_validate_arguments_before_opening_live_session(monkeypatch: pytes
         ("model_delete_device", {"target": "M1", "confirm": False}),
         ("model_create_device", {"class_name": "SingleProc", "name": "M1", "x": float("nan")}),
         ("simulation_start", {"statistics_start": -1.0}),
+        ("simulation_start", {"end_time": 0.0}),
+        ("simulation_start", {"end_time": -5.0}),
         ("simulation_run", {"timeout": 0.0}),
+        ("simulation_run", {"end_time": 0.0}),
         ("simulation_set_source", {"path": ".Models.Model.S1", "units": True, "interval": 1.0}),
         ("model_list_objects", {"frame_path": ".Models.Model\n"}),
         ("model_status", {"work_dir": "bad\x00dir"}),
@@ -460,6 +477,42 @@ def test_tools_validate_arguments_before_opening_live_session(monkeypatch: pytes
         res = tools.call_tool(name, args)
         assert res["ok"] is False
         assert res["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_tools_optional_nulls_empty_policies_and_fake_env_horizon(tmp_path: Path) -> None:
+    from psbridge.demo import build_demo_instance
+    from psbridge.scheduling.env import DispatchEnv
+
+    inst = build_demo_instance().to_dict()
+    gen = tools.call_tool("generate_simtalk", {"instance": inst, "policy": "fifo", "frame_path": None})
+    assert gen["ok"] is True
+    assert gen["frame_path"] == ".Models.Model"
+
+    empty_pol = tools.call_tool("compare_policies", {"instance": inst, "policies": []})
+    assert empty_pol["ok"] is False
+    assert empty_pol["error"]["code"] == "VALIDATION_ERROR"
+
+    null_opts = tools.call_tool(
+        "compare_policies",
+        {"instance": inst, "policies": None, "seeds": None, "work_dir": str(tmp_path / "null_opts")},
+    )
+    assert null_opts["ok"] is True
+    assert null_opts["run_count"] == 3
+
+    listed_null = tools.call_tool("list_runs", {"work_dir": None})
+    assert listed_null["ok"] is True
+
+    # FakeDispatchEngine filters ready ops against horizon in reset(): DispatchEnv must report truncated.
+    small = Instance(
+        instance_id="imm_trunc",
+        machines=(Machine("M1"),),
+        jobs=(Job("J1", (Operation("J1_O1", "J1", 0, ("M1",), 10.0),)),),
+    )
+    env = DispatchEnv(FakeDispatchEngine(), small, horizon=5.0)
+    obs = env.reset()
+    assert obs["truncated"] is True
+    assert obs["terminated"] is False
+    assert env.available_actions() == ()
 
 
 def test_tools_live_session_wiring_model_root_check_and_close_session(
@@ -608,10 +661,37 @@ def test_safe_ops_run_simulation_startup_grace_and_timeout(tmp_path: Path) -> No
     stuck_ops.new_model()
     with pytest.raises(BackendError, match="timeout"):
         stuck_ops.run_simulation(end_time=40.0, timeout=0.03, poll=0.005, startup_grace=0.5)
+    assert stuck_ops.simulation_status().running is False
 
     for bad_grace in (-0.1, float("nan"), True):
         with pytest.raises(ValidationError):
             stuck_ops.run_simulation(end_time=40.0, startup_grace=bad_grace)  # type: ignore[arg-type]
+
+
+def test_win32_controller_end_validation_large_number_and_clone_alias(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from psbridge.com import win32
+
+    with pytest.raises(ValidationError):
+        win32.build_controller_start(".Models.Model.EventController", 0.0)
+    with pytest.raises(ValidationError):
+        win32.build_controller_start(".Models.Model.EventController", -5.0)
+    stmt = win32.build_controller_start(".Models.Model.EventController", 3_000_000_000.0)
+    assert "End := 3000000000.0;" in stmt
+
+    model_file = tmp_path / "m.spp"
+    model_file.write_bytes(b"placeholder")
+    backend, _app = _mock_win32_backend(monkeypatch, tmp_path)
+    try:
+        backend.load_model(str(model_file))
+        with pytest.raises(ValidationError):
+            backend.clone_model(str(tmp_path / "." / "m.spp"))
+    finally:
+        backend._owns_instance = True
+        backend.disconnect()
+    assert backend.model_path is None
+    assert backend._discovered_frame is None
 
 
 # ---------------------------------------------------------------------------
